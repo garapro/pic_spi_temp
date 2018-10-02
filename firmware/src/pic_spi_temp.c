@@ -342,6 +342,7 @@ static void PIC_SPI_Tasks( void ){
         {
             pic_spi_tempData.spiState = SPI_STATE_WAIT;
             pic_spi_tempData.spiState_Next = SPI_STATE_PERIODTIMER;
+            
             // ID取得
             pic_spi_tempData.writeBuf[0] = 0x58;
             DRV_SPI_BufferAddWriteRead2(
@@ -374,7 +375,8 @@ static void PIC_SPI_Tasks( void ){
         {
             pic_spi_tempData.spiState = SPI_STATE_WAIT;
             pic_spi_tempData.spiState_Next = SPI_STATE_TEMPTIMER;
-            // Config設定
+            
+            // Config設定、温度計測開始
             pic_spi_tempData.writeBuf[0] = 0x08;
             pic_spi_tempData.writeBuf[1] = 0x50;
             DRV_SPI_BufferAddWrite2(
@@ -406,9 +408,9 @@ static void PIC_SPI_Tasks( void ){
             pic_spi_tempData.spiState = SPI_STATE_WAIT;
             pic_spi_tempData.spiState_Next = SPI_STATE_WRITE_BUFFER;
             
+            // 温度取得
             pic_spi_tempData.writeBuf[0] = 0x50;
             
-            // 温度取得
             DRV_SPI_BufferAddWriteRead2(
                     pic_spi_tempData.spiHandle,
                     pic_spi_tempData.writeBuf,
@@ -426,7 +428,7 @@ static void PIC_SPI_Tasks( void ){
         }
         case SPI_STATE_WRITE_BUFFER:
         {
-            // 温度取得
+            // 温度計算
             tmpData = (((uint16_t)(pic_spi_tempData.readBuf[1])<<8) & 0xFF00);
             tmpData = tmpData | pic_spi_tempData.readBuf[2];
             
@@ -435,6 +437,7 @@ static void PIC_SPI_Tasks( void ){
             } else {
                 temp = (float)((( tmpData & 0x7FF8 ) >> 3 ) & 0x0FFF )/16;
             }
+            
             // USB送信バッファ書き込み
             // 書込み後、USB_TX_TASKS で送信する
             memset( writeBuffer, 0x00, sizeof(writeBuffer) );

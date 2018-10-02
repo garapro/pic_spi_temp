@@ -98,15 +98,15 @@ typedef enum
 /*** ADD ***/
 // SPI データ取得状態
 typedef enum{
-    SPI_STATE_INIT=0,
-    SPI_STATE_ID,
-    SPI_STATE_PERIODTIMER,
-    SPI_STATE_ONESHOT,
-    SPI_STATE_TEMPTIMER,
-    SPI_STATE_DATA,
-    SPI_STATE_WRITE_BUFFER,
-    SPI_STATE_WAIT,
-    SPI_STATE_ERROR,
+    SPI_STATE_INIT=0,               // 初期
+    SPI_STATE_ID,                   // ID取得
+    SPI_STATE_PERIODTIMER,          // 周期タイマー開始
+    SPI_STATE_ONESHOT,              // 温度計測開始
+    SPI_STATE_TEMPTIMER,            // 温度計測待ちタイマー開始
+    SPI_STATE_DATA,                 // 温度取得
+    SPI_STATE_WRITE_BUFFER,         // 温度書き込み
+    SPI_STATE_WAIT,                 // 待ち
+    SPI_STATE_ERROR,                // エラー
 } SPI_STATES;
 /*** ADD ***/
 
@@ -153,16 +153,14 @@ typedef struct
     uint32_t writeLen;
 
     /*** ADD ***/
-    SPI_STATES spiState;          // SPI状態
-    SPI_STATES spiState_Next;     // 次のSPI状態
+    SPI_STATES spiState;                    // SPI状態
+    SPI_STATES spiState_Next;               // 次のSPI状態
     
-    DRV_HANDLE spiHandle;                   // I2Cハンドル
-    DRV_SPI_BUFFER_HANDLE spiBufferHandle;  // I2Cバッファハンドル
+    DRV_HANDLE spiHandle;                   // SPIハンドル
+    DRV_SPI_BUFFER_HANDLE spiBufferHandle;  // SPIバッファハンドル
     
     uint8_t writeBuf[10];                   // 書き込みレジスタ
     uint8_t readBuf[10];                    // 読み込みレジスタ
-    
-    int16_t temp;                           // 温度
     
     SYS_TMR_HANDLE timerHandle;             // タイマーハンドル
     /*** ADD ***/
