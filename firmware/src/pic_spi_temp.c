@@ -378,7 +378,7 @@ static void PIC_SPI_Tasks( void ){
             
             // Config設定、温度計測開始
             pic_spi_tempData.writeBuf[0] = 0x08;
-            pic_spi_tempData.writeBuf[1] = 0x50;
+            pic_spi_tempData.writeBuf[1] = 0x20;
             DRV_SPI_BufferAddWrite2(
                     pic_spi_tempData.spiHandle,
                     pic_spi_tempData.writeBuf,
