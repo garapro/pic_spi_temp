@@ -55,6 +55,8 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 
 #include "pic_spi_temp.h"
 
+#include <stdio.h>
+
 // *****************************************************************************
 // *****************************************************************************
 // Section: Global Data Definitions
@@ -79,6 +81,8 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 PIC_SPI_TEMP_DATA pic_spi_tempData;
 /* Static buffers, suitable for DMA transfer */
 #define PIC_SPI_TEMP_MAKE_BUFFER_DMA_READY  __attribute__((coherent)) __attribute__((aligned(16)))
+
+#define PIC_SPI_TEMP_FORMAT             "Temp : %f\r\n"
 
 static uint8_t PIC_SPI_TEMP_MAKE_BUFFER_DMA_READY writeBuffer[PIC_SPI_TEMP_USB_CDC_COM_PORT_SINGLE_WRITE_BUFFER_SIZE];
 static uint8_t writeString[] = "Hello World\r\n";
@@ -174,6 +178,9 @@ USB_DEVICE_CDC_EVENT_RESPONSE PIC_SPI_TEMP_USBDeviceCDCEventHandler
 
             /* This means that the host has sent some data*/
             appDataObject->writeTransferHandle = USB_DEVICE_CDC_TRANSFER_HANDLE_INVALID;
+            /*** ADD ***/
+            memset( writeBuffer, 0x00, sizeof(writeBuffer));
+            /*** ADD ***/
             break;
 
         default:
@@ -243,6 +250,29 @@ void PIC_SPI_TEMP_USBDeviceEventHandler ( USB_DEVICE_EVENT event, void * eventDa
 
 /* TODO:  Add any necessary callback functions.
 */
+/*** ADD ***/
+static void PIC_SPI_TEMP_callbackTimer( uintptr_t context, uint32_t currTick )
+{
+    pic_spi_tempData.spiState = pic_spi_tempData.spiState_Next;
+    return;
+}
+
+void PIC_SPI_TEMP_SPIEventHandler( DRV_SPI_BUFFER_EVENT event, DRV_SPI_BUFFER_HANDLE bufferHandle, void * context ){
+    
+    switch(event){
+        case DRV_SPI_BUFFER_EVENT_COMPLETE:
+        {
+            pic_spi_tempData.spiState = pic_spi_tempData.spiState_Next;
+            break;
+        }
+        case DRV_SPI_BUFFER_EVENT_ERROR:
+        {
+            pic_spi_tempData.spiState = SPI_STATE_ERROR;
+            break;
+        }
+    }
+}
+/*** ADD ***/
 
 // *****************************************************************************
 // *****************************************************************************
@@ -259,6 +289,10 @@ void PIC_SPI_TEMP_USBDeviceEventHandler ( USB_DEVICE_EVENT event, void * eventDa
 */
 static void USB_TX_Task (void)
 {
+    /*** ADD ***/
+    uint8_t size;
+    /*** ADD ***/
+    
     if(!pic_spi_tempData.isConfigured)
     {
         pic_spi_tempData.writeTransferHandle = USB_DEVICE_CDC_TRANSFER_HANDLE_INVALID;
@@ -267,22 +301,150 @@ static void USB_TX_Task (void)
     {
         /* Schedule a write if data is pending 
          */
-        if ((pic_spi_tempData.writeLen > 0)/* && (pic_spi_tempData.writeTransferHandle == USB_DEVICE_CDC_TRANSFER_HANDLE_INVALID)*/)
-        {
+        /*** ADD ***/
+        //if ((pic_spi_tempData.writeLen > 0)/* && (pic_spi_tempData.writeTransferHandle == USB_DEVICE_CDC_TRANSFER_HANDLE_INVALID)*/)
+        //{
+        //    USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
+        //                         &pic_spi_tempData.writeTransferHandle,
+        //                         writeBuffer, 
+        //                         pic_spi_tempData.writeLen,
+        //                         USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
+        //}
+        size = strlen(writeBuffer);
+        if ((size > 0) && (pic_spi_tempData.writeTransferHandle == USB_DEVICE_CDC_TRANSFER_HANDLE_INVALID)){
             USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
                                  &pic_spi_tempData.writeTransferHandle,
                                  writeBuffer, 
-                                 pic_spi_tempData.writeLen,
+                                 size,
                                  USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
         }
+        /*** ADD ***/
     }
 }
 
 
 /* TODO:  Add any necessary local functions.
 */
-
-
+/*** ADD ***/
+static void PIC_SPI_Tasks( void ){
+    
+    uint16_t tmpData;
+    float temp;
+    
+    switch(pic_spi_tempData.spiState){
+        case SPI_STATE_INIT:
+        {
+            pic_spi_tempData.spiState = SPI_STATE_ID;
+            CSOff();
+            break;
+        }
+        case SPI_STATE_ID:
+        {
+            pic_spi_tempData.spiState = SPI_STATE_WAIT;
+            pic_spi_tempData.spiState_Next = SPI_STATE_PERIODTIMER;
+            // ID取得
+            pic_spi_tempData.writeBuf[0] = 0x58;
+            DRV_SPI_BufferAddWriteRead2(
+                    pic_spi_tempData.spiHandle,
+                    pic_spi_tempData.writeBuf,
+                    1,
+                    pic_spi_tempData.readBuf,
+                    2,
+                    PIC_SPI_TEMP_SPIEventHandler,
+                    NULL,
+                    &pic_spi_tempData.spiBufferHandle
+                    );
+            if( pic_spi_tempData.spiBufferHandle == DRV_SPI_BUFFER_HANDLE_INVALID ){
+                pic_spi_tempData.spiState = SPI_STATE_ID;
+            }
+            break;
+        }
+        case SPI_STATE_PERIODTIMER:
+        {
+            pic_spi_tempData.spiState = SPI_STATE_WAIT;
+            pic_spi_tempData.spiState_Next = SPI_STATE_ONESHOT;
+            
+            pic_spi_tempData.timerHandle = SYS_TMR_ObjectCreate(1000, 0, PIC_SPI_TEMP_callbackTimer, SYS_TMR_FLAG_SINGLE | SYS_TMR_FLAG_AUTO_DELETE );
+            if( pic_spi_tempData.timerHandle == SYS_TMR_HANDLE_INVALID){
+                pic_spi_tempData.spiState = SPI_STATE_PERIODTIMER;
+            }
+            break;
+        }
+        case SPI_STATE_ONESHOT:
+        {
+            pic_spi_tempData.spiState = SPI_STATE_WAIT;
+            pic_spi_tempData.spiState_Next = SPI_STATE_TEMPTIMER;
+            // Config設定
+            pic_spi_tempData.writeBuf[0] = 0x08;
+            pic_spi_tempData.writeBuf[1] = 0x50;
+            DRV_SPI_BufferAddWrite2(
+                    pic_spi_tempData.spiHandle,
+                    pic_spi_tempData.writeBuf,
+                    2,
+                    PIC_SPI_TEMP_SPIEventHandler,
+                    NULL,
+                    &pic_spi_tempData.spiBufferHandle
+                    );
+            if( pic_spi_tempData.spiBufferHandle == DRV_SPI_BUFFER_HANDLE_INVALID ){
+                pic_spi_tempData.spiState = SPI_STATE_ID;
+            }
+            break;
+        }
+        case SPI_STATE_TEMPTIMER:
+        {
+            pic_spi_tempData.spiState = SPI_STATE_WAIT;
+            pic_spi_tempData.spiState_Next = SPI_STATE_DATA;
+            
+            pic_spi_tempData.timerHandle = SYS_TMR_ObjectCreate(240, 0, PIC_SPI_TEMP_callbackTimer, SYS_TMR_FLAG_SINGLE | SYS_TMR_FLAG_AUTO_DELETE );
+            if( pic_spi_tempData.timerHandle == SYS_TMR_HANDLE_INVALID){
+                pic_spi_tempData.spiState = SPI_STATE_TEMPTIMER;
+            }
+            break;
+        }
+        case SPI_STATE_DATA:
+        {
+            pic_spi_tempData.spiState = SPI_STATE_WAIT;
+            pic_spi_tempData.spiState_Next = SPI_STATE_WRITE_BUFFER;
+            
+            pic_spi_tempData.writeBuf[0] = 0x50;
+            
+            // 温度取得
+            DRV_SPI_BufferAddWriteRead2(
+                    pic_spi_tempData.spiHandle,
+                    pic_spi_tempData.writeBuf,
+                    1,
+                    pic_spi_tempData.readBuf,
+                    3,
+                    PIC_SPI_TEMP_SPIEventHandler,
+                    NULL,
+                    &pic_spi_tempData.spiBufferHandle
+                    );
+            if( pic_spi_tempData.spiBufferHandle == DRV_SPI_BUFFER_HANDLE_INVALID ){
+                pic_spi_tempData.spiState = SPI_STATE_DATA;
+            }
+            break;
+        }
+        case SPI_STATE_WRITE_BUFFER:
+        {
+            // 温度取得
+            tmpData = (((uint16_t)(pic_spi_tempData.readBuf[1])<<8) & 0xFF00);
+            tmpData = tmpData | pic_spi_tempData.readBuf[2];
+            
+            if( tmpData >= 32768 ){
+                temp = (float)((( tmpData & 0x7FF8 ) >> 3 ) & 0x0FFF )/16 * -1;
+            } else {
+                temp = (float)((( tmpData & 0x7FF8 ) >> 3 ) & 0x0FFF )/16;
+            }
+            // USB送信バッファ書き込み
+            // 書込み後、USB_TX_TASKS で送信する
+            memset( writeBuffer, 0x00, sizeof(writeBuffer) );
+            sprintf( writeBuffer, PIC_SPI_TEMP_FORMAT, temp );
+            pic_spi_tempData.spiState = SPI_STATE_PERIODTIMER;
+            break;
+        }
+    }
+}
+/*** ADD***/
 // *****************************************************************************
 // *****************************************************************************
 // Section: Application Initialization and State Machine Functions
@@ -326,6 +488,20 @@ void PIC_SPI_TEMP_Initialize ( void )
     /* TODO: Initialize your application's state machine and other
      * parameters.
      */
+    /*** ADD ***/
+    pic_spi_tempData.spiState = SPI_STATE_INIT;
+    pic_spi_tempData.spiState_Next = SPI_STATE_INIT;
+    
+    pic_spi_tempData.spiHandle = DRV_HANDLE_INVALID;
+    pic_spi_tempData.spiBufferHandle = DRV_SPI_BUFFER_HANDLE_INVALID;
+    
+    memset( pic_spi_tempData.writeBuf, 0x00, sizeof(pic_spi_tempData.writeBuf));
+    memset( pic_spi_tempData.readBuf, 0x00, sizeof(pic_spi_tempData.readBuf));
+    
+    pic_spi_tempData.temp = 0;
+    
+    pic_spi_tempData.timerHandle = SYS_TMR_HANDLE_INVALID;
+    /*** ADD ***/
 }
 
 
@@ -356,6 +532,14 @@ void PIC_SPI_TEMP_Tasks ( void )
                                                DRV_IO_INTENT_READWRITE );
                 appInitialized &= ( USB_DEVICE_HANDLE_INVALID != pic_spi_tempData.deviceHandle );
             }
+            
+            /*** ADD ***/
+            if (pic_spi_tempData.spiHandle == DRV_HANDLE_INVALID)
+            {
+                pic_spi_tempData.spiHandle = DRV_SPI_Open( DRV_SPI_INDEX_0, DRV_IO_INTENT_READWRITE | DRV_IO_INTENT_NONBLOCKING );
+                appInitialized &= ( DRV_HANDLE_INVALID != pic_spi_tempData.spiHandle );
+            }
+            /*** ADD ***/
         
             if (appInitialized)
             {
@@ -372,6 +556,10 @@ void PIC_SPI_TEMP_Tasks ( void )
         case PIC_SPI_TEMP_STATE_SERVICE_TASKS:
         {
             USB_TX_Task();
+            
+            /*** ADD ***/
+            PIC_SPI_Tasks();
+            /*** ADD ***/
         
             break;
         }

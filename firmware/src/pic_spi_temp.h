@@ -95,6 +95,21 @@ typedef enum
 } PIC_SPI_TEMP_STATES;
 
 
+/*** ADD ***/
+// SPI データ取得状態
+typedef enum{
+    SPI_STATE_INIT=0,
+    SPI_STATE_ID,
+    SPI_STATE_PERIODTIMER,
+    SPI_STATE_ONESHOT,
+    SPI_STATE_TEMPTIMER,
+    SPI_STATE_DATA,
+    SPI_STATE_WRITE_BUFFER,
+    SPI_STATE_WAIT,
+    SPI_STATE_ERROR,
+} SPI_STATES;
+/*** ADD ***/
+
 // *****************************************************************************
 /* Application Data
 
@@ -137,6 +152,21 @@ typedef struct
     /* Length of data to be written */
     uint32_t writeLen;
 
+    /*** ADD ***/
+    SPI_STATES spiState;          // SPI状態
+    SPI_STATES spiState_Next;     // 次のSPI状態
+    
+    DRV_HANDLE spiHandle;                   // I2Cハンドル
+    DRV_SPI_BUFFER_HANDLE spiBufferHandle;  // I2Cバッファハンドル
+    
+    uint8_t writeBuf[10];                   // 書き込みレジスタ
+    uint8_t readBuf[10];                    // 読み込みレジスタ
+    
+    int16_t temp;                           // 温度
+    
+    SYS_TMR_HANDLE timerHandle;             // タイマーハンドル
+    /*** ADD ***/
+    
 } PIC_SPI_TEMP_DATA;
 
 
